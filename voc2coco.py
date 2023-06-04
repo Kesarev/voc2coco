@@ -28,12 +28,11 @@ def get_annpaths(ann_dir_path: str = None,
     # If use annotaion ids list
     ext_with_dot = '.' + ext if ext != '' else ''
     with open(ann_ids_path, 'r') as f:
-        ann_ids = f.read().split()
-    ann_paths = [os.path.join(ann_dir_path, aid+ext_with_dot) for aid in ann_ids]
+        ann_ids = f.read().split('\n')
+    ann_paths = [os.path.join(ann_dir_path, aid+ext_with_dot) for aid in ann_ids if aid]
     return ann_paths
 
-
-def get_image_info(annotation_root, extract_num_from_imgid=True):
+def get_image_info(annotation_root, image_ids):
     path = annotation_root.findtext('path')
     if path is None:
         filename = annotation_root.findtext('filename')
@@ -41,8 +40,13 @@ def get_image_info(annotation_root, extract_num_from_imgid=True):
         filename = os.path.basename(path)
     img_name = os.path.basename(filename)
     img_id = os.path.splitext(img_name)[0]
-    if extract_num_from_imgid and isinstance(img_id, str):
-        img_id = int(re.findall(r'\d+', img_id)[0])
+
+    if image_ids is None and isinstance(img_id, str):
+        img_id = int(re.findall(r'\d+', img_id)[0])        
+    else:
+        if not img_id in image_ids.keys():
+            image_ids[img_id] = len(image_ids)
+        img_id = image_ids[img_id]        
 
     size = annotation_root.find('size')
     width = int(size.findtext('width'))
@@ -92,13 +96,14 @@ def convert_xmls_to_cocojson(annotation_paths: List[str],
     }
     bnd_id = 1  # START_BOUNDING_BOX_ID, TODO input as args ?
     print('Start converting !')
+
+    image_ids = {}
     for a_path in tqdm(annotation_paths):
         # Read annotation xml
         ann_tree = ET.parse(a_path)
         ann_root = ann_tree.getroot()
 
-        img_info = get_image_info(annotation_root=ann_root,
-                                  extract_num_from_imgid=extract_num_from_imgid)
+        img_info = get_image_info(annotation_root=ann_root, image_ids = image_ids if not extract_num_from_imgid else None )
         img_id = img_info['id']
         output_json_dict['images'].append(img_info)
 
@@ -129,7 +134,9 @@ def main():
     parser.add_argument('--labels', type=str, default=None,
                         help='path to label list.')
     parser.add_argument('--output', type=str, default='output.json', help='path to output json file')
-    parser.add_argument('--ext', type=str, default='', help='additional extension of annotation file')
+    parser.add_argument('--ext', type=str, default='', help='additional extension of annotation file')    
+    parser.add_argument('--extract_num_from_imgid', type=bool, default=False, help='if true get 1st numeric component from filename')
+
     args = parser.parse_args()
     label2id = get_label2id(labels_path=args.labels)
     ann_paths = get_annpaths(
@@ -142,9 +149,8 @@ def main():
         annotation_paths=ann_paths,
         label2id=label2id,
         output_jsonpath=args.output,
-        extract_num_from_imgid=True
+        extract_num_from_imgid=args.extract_num_from_imgid
     )
-
 
 if __name__ == '__main__':
     main()
